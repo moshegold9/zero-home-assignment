@@ -1,0 +1,84 @@
+
+services:
+  minio:
+    image: minio/minio:latest
+    container_name: minio
+    command: server /data --console-address ":9001"
+    environment:
+      MINIO_ROOT_USER: admin
+      MINIO_ROOT_PASSWORD: admin12345
+    ports:
+      - "9000:9000"
+      - "9001:9001"
+    volumes:
+      - minio_data:/data
+
+  # Initialize the bucket for the warehouse
+  minio-init-bucket:
+    image: minio/mc:latest
+    container_name: minio-init-bucket
+    depends_on:
+      - minio
+    entrypoint: >
+      /bin/sh -c "
+      until mc alias set local http://minio:9000 admin admin12345; do echo 'waiting for minio...' && sleep 1; done;
+      mc mb -p local/warehouse || true;
+      "
+
+  postgres:
+    image: postgres:15
+    container_name: iceberg-postgres
+    environment:
+      POSTGRES_USER: iceberg
+      POSTGRES_PASSWORD: iceberg
+      POSTGRES_DB: iceberg
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+
+  iceberg-rest:
+    image: tabulario/iceberg-rest:latest
+    container_name: iceberg-rest
+
+    environment:
+
+      # Changed env vars to use the right format for underscores
+      CATALOG_CATALOG__IMPL: org.apache.iceberg.jdbc.JdbcCatalog
+      CATALOG_URI: jdbc:postgresql://postgres:5432/iceberg
+      CATALOG_JDBC_USER: iceberg
+      CATALOG_JDBC_PASSWORD: iceberg
+      CATALOG_WAREHOUSE: s3://warehouse/
+      CATALOG_S3_ENDPOINT: http://minio:9000
+      CATALOG_S3_ACCESS__KEY__ID: admin
+      CATALOG_S3_SECRET__ACCESS__KEY: admin12345
+      CATALOG_S3_REGION: us-east-1
+      CATALOG_S3_PATH__STYLE__ACCESS: "true"
+
+      AWS_REGION: us-east-1
+
+      # Added io-impl env var to use the right s3 file system
+      CATALOG_IO__IMPL: org.apache.iceberg.aws.s3.S3FileIO
+      
+
+    depends_on:
+      - postgres
+      - minio
+      - minio-init-bucket
+
+    ports:
+      - "8181:8181"
+
+  trino-coordinator:
+    image: trinodb/trino:latest
+    container_name: trino-coordinator
+    ports:
+      - "8080:8080"
+    depends_on:
+      - iceberg-rest
+    volumes:
+      - ./trino/etc:/etc/trino
+
+volumes:
+  minio_data:
+  postgres_data:
