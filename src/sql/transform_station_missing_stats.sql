@@ -1,17 +1,17 @@
 -- Merge per-station deltas into the aggregate table
-MERGE INTO iceberg.noaa.station_missing_stats AS target
+MERGE INTO ${ICEBERG_CATALOG}.${ICEBERG_SCHEMA}.${ICEBERG_TABLE_STATS} AS target
 USING (
   WITH last_state AS (
     SELECT COALESCE(MAX(last_ingestion_timestamp_ms), 0) AS last_ts
-    FROM iceberg.noaa.pipeline_state
-    WHERE pipeline_name = 'station_missing_stats'
+    FROM ${ICEBERG_CATALOG}.${ICEBERG_SCHEMA}.${ICEBERG_TABLE_STATE}
+    WHERE pipeline_name = '${PIPELINE_NAME}'
   ),
   deltas AS (
     SELECT
       station,
       COUNT(*) AS total_delta,
       SUM(CASE WHEN value = 99999 THEN 1 ELSE 0 END) AS missing_delta
-    FROM iceberg.noaa.precip_15
+    FROM ${ICEBERG_CATALOG}.${ICEBERG_SCHEMA}.${ICEBERG_TABLE_PRECIP}
     WHERE ingestion_timestamp_ms > (SELECT last_ts FROM last_state)
     GROUP BY station
   )
@@ -35,19 +35,19 @@ WHEN NOT MATCHED THEN INSERT (
 );
 
 -- Advance the watermark (even if there were no deltas, it stays the same)
-MERGE INTO iceberg.noaa.pipeline_state AS target
+MERGE INTO ${ICEBERG_CATALOG}.${ICEBERG_SCHEMA}.${ICEBERG_TABLE_STATE} AS target
 USING (
   WITH last_state AS (
     SELECT COALESCE(MAX(last_ingestion_timestamp_ms), 0) AS last_ts
-    FROM iceberg.noaa.pipeline_state
-    WHERE pipeline_name = 'station_missing_stats'
+    FROM ${ICEBERG_CATALOG}.${ICEBERG_SCHEMA}.${ICEBERG_TABLE_STATE}
+    WHERE pipeline_name = '${PIPELINE_NAME}'
   ),
   new_max AS (
     SELECT COALESCE(MAX(ingestion_timestamp_ms), (SELECT last_ts FROM last_state)) AS new_ts
-    FROM iceberg.noaa.precip_15
+    FROM ${ICEBERG_CATALOG}.${ICEBERG_SCHEMA}.${ICEBERG_TABLE_PRECIP}
     WHERE ingestion_timestamp_ms > (SELECT last_ts FROM last_state)
   )
-  SELECT 'station_missing_stats' AS pipeline_name, new_ts AS last_ingestion_timestamp_ms
+  SELECT '${PIPELINE_NAME}' AS pipeline_name, new_ts AS last_ingestion_timestamp_ms
   FROM new_max
 ) AS source
 ON (target.pipeline_name = source.pipeline_name)

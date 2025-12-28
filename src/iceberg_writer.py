@@ -20,10 +20,10 @@ class IcebergConfig:
     s3_endpoint: str
     s3_access_key_id: str
     s3_secret_access_key: str
-    s3_region: str = "us-east-1"
-    table_identifier: str = "noaa.precip_15"
-    s3_bucket: str = "warehouse"
-    s3_prefix: str = "tmp/noaa/precip_15"
+    s3_region: str
+    table_identifier: str
+    s3_bucket: str
+    s3_prefix: str
 
 
 class IcebergWriter:
@@ -31,7 +31,7 @@ class IcebergWriter:
     Write a pandas dataframe to a parquet file in MinIO and append it to an Iceberg table using the PyIceberg REST catalog.
     """
 
-    def __init__(self) -> None:
+    def __init__(self, schema: str, table: str) -> None:
         self._config = IcebergConfig(
             rest_uri=os.getenv("ICEBERG_REST_URI", "http://localhost:8181"),
             warehouse=os.getenv("ICEBERG_WAREHOUSE", "s3://warehouse"),
@@ -39,9 +39,9 @@ class IcebergWriter:
             s3_access_key_id=os.getenv("MINIO_ACCESS_KEY", "admin"),
             s3_secret_access_key=os.getenv("MINIO_SECRET_KEY", "admin12345"),
             s3_region=os.getenv("MINIO_REGION", "us-east-1"),
-            table_identifier=os.getenv("ICEBERG_TABLE", "noaa.precip_15"),
+            table_identifier=f"{schema}.{table}",
             s3_bucket=os.getenv("MINIO_BUCKET", "warehouse"),
-            s3_prefix=os.getenv("ICEBERG_STAGE_PREFIX", "tmp/noaa/precip_15"),
+            s3_prefix=f"tmp/{schema}/{table}",
         )
 
     def write_df(self, df: pd.DataFrame) -> str:
